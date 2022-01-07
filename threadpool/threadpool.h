@@ -9,7 +9,7 @@
 #include "../CGImysql/sql_connection_pool.h"
 
 
-// 测试
+// 测试2
 template <typename T>
 class threadpool
 {
