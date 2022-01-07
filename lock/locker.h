@@ -55,6 +55,10 @@ public:
         }
     }
     ~cond() { pthread_cond_destroy(&m_cond); }
+
+    //! 对于wait，将m_mutex的上锁和解锁从wait内部移出的原因是:
+    //!     使得该互斥锁不仅仅用于保护pthread_cond_wait
+    //!     还可以将该互斥锁用于调用者代码段的内更大的临界区。
     bool wait(pthread_mutex_t *m_mutex) {
         int ret = 0;
         //pthread_mutex_lock(&m_mutex);

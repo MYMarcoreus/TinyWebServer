@@ -17,7 +17,7 @@ const char* error_500_form  = "There was an unusual problem serving the request 
 locker m_lock;
 map<string, string> users;
 
-void http_conn::initmysql_result(connection_pool *connPool)
+void http_conn::initmysql_result(sql_connection_pool *connPool)
 {
     //先从连接池中取一个连接
     MYSQL *mysql = NULL;
@@ -127,13 +127,14 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMo
     strcpy(sql_user, user.c_str());
     strcpy(sql_passwd, passwd.c_str());
     strcpy(sql_name, sqlname.c_str());
+    LOG_INFO("http_conn::init(%x)", this);
 
-    init();
+    __init();
 }
 
-//初始化新接受的连接
+//!初始化新接受的连接
 //check_state默认为分析请求行状态
-void http_conn::init()
+void http_conn::__init()
 {
     mysql            = NULL;
     bytes_to_send    = 0;
@@ -154,44 +155,12 @@ void http_conn::init()
     timer_flag       = 0;
     improv           = 0;
 
-    memset(m_read_buf, '\0', READ_BUFFER_SIZE);
+    memset(m_read_buf , '\0', READ_BUFFER_SIZE);
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
+    LOG_INFO("http_conn::__init(%x)", this);
 }
 
-//从状态机，用于分析出一行内容
-//返回值为行的读取状态，有LINE_OK,LINE_BAD,LINE_OPEN
-http_conn::LINE_STATUS http_conn::parse_line()
-{
-    char temp;
-    for (; m_checked_idx < m_read_idx; ++m_checked_idx)
-    {
-        temp = m_read_buf[m_checked_idx];
-        if (temp == '\r')
-        {
-            if ((m_checked_idx + 1) == m_read_idx)
-                return LINE_OPEN;
-            else if (m_read_buf[m_checked_idx + 1] == '\n')
-            {
-                m_read_buf[m_checked_idx++] = '\0';
-                m_read_buf[m_checked_idx++] = '\0';
-                return LINE_OK;
-            }
-            return LINE_BAD;
-        }
-        else if (temp == '\n')
-        {
-            if (m_checked_idx > 1 && m_read_buf[m_checked_idx - 1] == '\r')
-            {
-                m_read_buf[m_checked_idx - 1] = '\0';
-                m_read_buf[m_checked_idx++] = '\0';
-                return LINE_OK;
-            }
-            return LINE_BAD;
-        }
-    }
-    return LINE_OPEN;
-}
 
 //循环读取客户数据，直到无数据可读或对方关闭连接
 //非阻塞ET工作模式下，需要一次性将数据读完
@@ -208,6 +177,7 @@ bool http_conn::read_once()
     {
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
         m_read_idx += bytes_read;
+        LOG_INFO("m_read_idx = %d", m_read_idx);
 
         if (bytes_read <= 0)
         {
@@ -238,39 +208,101 @@ bool http_conn::read_once()
     }
 }
 
-//解析http请求行，获得请求方法，目标url及http版本号
+
+//从状态机，用于分析出一行内容
+//返回值为行的读取状态，有LINE_OK,LINE_BAD,LINE_OPEN
+// 对于正确的行，将其"\r\n"更改为"\0\0"，并让一根指针指向该行开头（在上一次处理中指向"\0\0"之后的位置），以取出改行
+http_conn::LINE_STATUS http_conn::parse_line()
+{
+    char temp;
+    /* m_checked_idx指向buffer中当前正在分析的字节；m_read_idx指向buffer中客户数据的尾部的下一字节
+    buffer的 [0, m_checked_idx-1] 字节都已分析完毕，第 [m_checked_idx, m_read_idx-1] 字节由下面的循环逐个分析 */
+    for (; m_checked_idx < m_read_idx; ++m_checked_idx)
+    {
+        // 获取当前要分析的字节
+        temp = m_read_buf[m_checked_idx];
+        // "\r\n"标志着一行的结束
+        if (temp == '\r')
+        {
+            // 如果'\r'是本次读取的最后一个字节，说明本次parse还未读取到一个完整的一行
+            if (m_checked_idx == m_read_idx - 1)
+                return LINE_OPEN;
+            // 如果'\r'是本次读取的最后一个字节，下一个字符是'\n'，说明本次parse已经读取到一个完整的一行
+            else if (m_read_buf[m_checked_idx + 1] == '\n')
+            {
+                m_read_buf[m_checked_idx++] = '\0';
+                m_read_buf[m_checked_idx++] = '\0';
+                return LINE_OK;
+            }
+            // 否则用户发送的http请求存在语法问题
+            else
+                return LINE_BAD;
+        }
+        else if (temp == '\n')
+        {
+            // 如果'\n'是本次读取的最后一个字节，上一个字符是'\r'，说明本次parse已经读取到一个完整的一行
+            if (m_checked_idx > 1 && m_read_buf[m_checked_idx - 1] == '\r')
+            {
+                m_read_buf[m_checked_idx - 1] = '\0';
+                m_read_buf[m_checked_idx++] = '\0';
+                return LINE_OK;
+            }
+            return LINE_BAD;
+        }
+    }
+    return LINE_OPEN;
+}
+
+
+// 解析http请求行，获得请求方法，目标url及http版本号（它们使用空格或tab分隔开的）
+// strpbrk
+// strcasecmp
+// strspn
+// strchr
+// strlen
+// strcat
+// 请求行格式：【请求方法 目标资源地址 http版本号】
+// 其中空格可能为' '或'\t'，也有可能有多个空格
 http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 {
+    // 得到被请求的资源地址
     m_url = strpbrk(text, " \t");
-    if (!m_url)
-    {
+    if (!m_url) {
         return BAD_REQUEST;
     }
-    *m_url++ = '\0';
+    *m_url++ = '\0'; // 将该位置改为\0，用于将前面的请求方法取出
+    m_url += strspn(m_url, " \t"); // 可能仍存在空格，将其跳过（）
+
+    // 判断请求方法：get请求较为简单，返回对应网页即可。而post需要执行cgi程序。
     char *method = text;
-    if (strcasecmp(method, "GET") == 0)
+    if (strcasecmp(method, "GET") == 0) {
         m_method = GET;
-    else if (strcasecmp(method, "POST") == 0)
-    {
+    } else
+    if (strcasecmp(method, "POST") == 0) {
         m_method = POST;
         cgi = 1;
-    }
-    else
+    } else {
         return BAD_REQUEST;
-    m_url += strspn(m_url, " \t");
+    }
+
+
+    // 得到http版本号
     m_version = strpbrk(m_url, " \t");
     if (!m_version)
         return BAD_REQUEST;
     *m_version++ = '\0';
     m_version += strspn(m_version, " \t");
+
+    // 判断http版本：仅支持HTTP/1.1
     if (strcasecmp(m_version, "HTTP/1.1") != 0)
         return BAD_REQUEST;
+
+    // 跳过被请求资源的协议前缀
     if (strncasecmp(m_url, "http://", 7) == 0)
     {
         m_url += 7;
         m_url = strchr(m_url, '/');
-    }
-
+    } else
     if (strncasecmp(m_url, "https://", 8) == 0)
     {
         m_url += 8;
@@ -282,6 +314,8 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     //当url为/时，显示判断界面
     if (strlen(m_url) == 1)
         strcat(m_url, "judge.html");
+
+    // 请求行处理完毕，将主状态机转移处理请求头
     m_check_state = CHECK_STATE_HEADER;
     return NO_REQUEST;
 }
@@ -339,10 +373,11 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     return NO_REQUEST;
 }
 
+// 主状态机
 http_conn::HTTP_CODE http_conn::process_read()
 {
-    LINE_STATUS line_status = LINE_OK;
-    HTTP_CODE ret = NO_REQUEST;
+    LINE_STATUS line_status = LINE_OK;  // 记录当前行的读取状态
+    HTTP_CODE ret = NO_REQUEST;         // 记录HTTP请求的处理结果
     char *text = 0;
 
     while ((m_check_state == CHECK_STATE_CONTENT && line_status == LINE_OK) || ((line_status = parse_line()) == LINE_OK))
@@ -350,7 +385,7 @@ http_conn::HTTP_CODE http_conn::process_read()
         text = get_line();
         m_start_line = m_checked_idx;
         LOG_INFO("%s", text);
-        switch (m_check_state)
+        switch (m_check_state) // check_state记录主状态机当前的状态
         {
         case CHECK_STATE_REQUESTLINE:
         {
@@ -513,6 +548,8 @@ http_conn::HTTP_CODE http_conn::do_request()
     close(fd);
     return FILE_REQUEST;
 }
+
+
 void http_conn::unmap()
 {
     if (m_file_address)
@@ -528,7 +565,7 @@ bool http_conn::write()
     if (bytes_to_send == 0)
     {
         modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
-        init();
+        __init();
         return true;
     }
 
@@ -568,7 +605,7 @@ bool http_conn::write()
 
             if (m_linger)
             {
-                init();
+                __init();
                 return true;
             }
             else
@@ -593,7 +630,7 @@ bool http_conn::add_response(const char *format, ...)
     m_write_idx += len;
     va_end(arg_list);
 
-    LOG_INFO("request:%s", m_write_buf);
+    LOG_INFO("\nrequest:%s", m_write_buf);
 
     return true;
 }

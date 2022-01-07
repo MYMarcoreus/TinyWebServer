@@ -33,15 +33,23 @@ public:
     void sql_pool();
     void log_write();
     void trig_mode();
+
     void eventListen();
     void eventLoop();
-    void timer(int connfd, struct sockaddr_in client_address);
+
+    void run();
+
+private:
+// 供deal函数调用的操作timer的私有函数
+    // 调整定时器的相关函数
+    void add_timer(int connfd, struct sockaddr_in client_address);
     void adjust_timer(util_timer *timer);
-    void deal_timer(util_timer *timer, int sockfd);
-    bool dealclinetdata();
-    bool dealwithsignal(bool& timeout, bool& stop_server);
-    void dealwithread(int sockfd);
-    void dealwithwrite(int sockfd);
+    void del_timer(util_timer *timer, int sockfd);
+//
+    bool deal_newclient();
+    bool dealwith_signal(bool& timeout, bool& stop_server);
+    void dealwith_read(int sockfd);
+    void dealwith_write(int sockfd);
 
 public:
     //基础
@@ -53,17 +61,17 @@ public:
 
     int        m_pipefd[2];
     int        m_epollfd;
-    http_conn* users;
+    http_conn* users;       // 存放http_conn对象的数组，内部对象会被append进线程池m_pool中
 
     //数据库相关
-    connection_pool* m_connPool;
-    string           m_user;         //登陆数据库用户名
-    string           m_passWord;     //登陆数据库密码
-    string           m_databaseName; //使用数据库名
-    int              m_sql_num;
+    sql_connection_pool* m_sqlConnPool;
+    string               m_user;         //登陆数据库用户名
+    string               m_passWord;     //登陆数据库密码
+    string               m_databaseName; //使用数据库名
+    int                  m_sql_num;
 
     //线程池相关
-    threadpool<http_conn>* m_pool;
+    threadpool<http_conn>* m_threadPool;
     int                    m_thread_num;
 
     //epoll_event相关
@@ -75,8 +83,8 @@ public:
     int m_LISTENTrigmode;
     int m_CONNTrigmode;
 
-    //定时器相关
+    //定时器相关(定时器用来处理非活动链接)
     client_data* users_timer;
-    Utils        utils;
+    Utils        utils; // 这应放入一个命名空间
 };
 #endif

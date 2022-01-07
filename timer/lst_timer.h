@@ -33,6 +33,7 @@ struct client_data
     util_timer* timer;
 };
 
+// 升序链表结点
 class util_timer
 {
 public:
@@ -47,6 +48,7 @@ public:
     util_timer *next;
 };
 
+// 升序链表
 class sort_timer_lst
 {
 public:
@@ -59,7 +61,7 @@ public:
     void tick();
 
 private:
-    void add_timer(util_timer *timer, util_timer *lst_head);
+    void __add_timer(util_timer *timer, util_timer *lst_head);
 
     util_timer *head;
     util_timer *tail;

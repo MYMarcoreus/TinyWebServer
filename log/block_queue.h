@@ -5,7 +5,6 @@
 
 #ifndef BLOCK_QUEUE_H
 #define BLOCK_QUEUE_H
-
 #include <iostream>
 #include <stdlib.h>
 #include <pthread.h>
@@ -26,17 +25,17 @@ public:
 
         m_max_size = max_size;
         m_array = new T[max_size];
-        m_size = 0;
+        m_size  = 0;
         m_front = -1;
-        m_back = -1;
+        m_back  = -1;
     }
 
     void clear()
     {
         m_mutex.lock();
-        m_size = 0;
+        m_size  = 0;
         m_front = -1;
-        m_back = -1;
+        m_back  = -1;
         m_mutex.unlock();
     }
 
@@ -45,22 +44,22 @@ public:
         m_mutex.lock();
         if (m_array != NULL)
             delete [] m_array;
-
         m_mutex.unlock();
     }
+
     //判断队列是否满了
     bool full()
     {
         m_mutex.lock();
         if (m_size >= m_max_size)
         {
-
             m_mutex.unlock();
             return true;
         }
         m_mutex.unlock();
         return false;
     }
+
     //判断队列是否为空
     bool empty()
     {
@@ -73,6 +72,7 @@ public:
         m_mutex.unlock();
         return false;
     }
+
     //返回队首元素
     bool front(T &value)
     {
@@ -86,6 +86,7 @@ public:
         m_mutex.unlock();
         return true;
     }
+
     //返回队尾元素
     bool back(T &value)
     {
@@ -121,6 +122,7 @@ public:
         m_mutex.unlock();
         return tmp;
     }
+
     //往队列添加元素，需要将所有使用队列的线程先唤醒
     //当有元素push进队列,相当于生产者生产了一个元素
     //若当前没有线程等待条件变量,则唤醒无意义
@@ -145,7 +147,7 @@ public:
         m_mutex.unlock();
         return true;
     }
-    //pop时,如果当前队列没有元素,将会等待条件变量
+    // pop时，如果当前队列没有元素，将会等待条件变量
     bool pop(T &item)
     {
 
