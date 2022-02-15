@@ -20,7 +20,7 @@ public:
         return &instance;
     }
 
-    static void *flush_log_thread(void *args)
+    static void flush_log_thread(void *args)
     {
         Log::get_instance()->async_write_log();
     }
@@ -34,7 +34,7 @@ public:
 private:
     Log();
     virtual ~Log();
-    void *async_write_log()
+    void async_write_log()
     {
         string single_log;
         //从阻塞队列中取出一个日志string，写入文件

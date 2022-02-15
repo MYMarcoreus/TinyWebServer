@@ -49,7 +49,8 @@ private:
 };
 
 template <typename T>
-threadpool<T>::threadpool( int actor_model, sql_connection_pool *connPool, int thread_number, int max_requests)
+threadpool<T>::threadpool( int actor_model,
+sql_connection_pool *connPool, int thread_number, int max_requests)
     : m_actor_model(actor_model),m_thread_number(thread_number),
     m_max_requests(max_requests), m_sqlConnPool(connPool), m_threads(NULL)
 {

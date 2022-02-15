@@ -206,7 +206,8 @@ void WebServer::adjust_timer(util_timer *timer)
 // 关闭连接，删除timer
 void WebServer::del_timer(util_timer *timer, int sockfd)
 {
-    timer->cb_func(&users_timer[sockfd]);
+    if(timer)
+        timer->cb_func(&users_timer[sockfd]);
     if (timer)
     {
         utils.m_timer_lst.del_timer(timer);
