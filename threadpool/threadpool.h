@@ -35,7 +35,7 @@ private:
 
 private:
     int                  m_actor_model;   // 模型切换（reactor/proactor）
-    sql_connection_pool* m_sqlConnPool;      // 数据库
+    sql_connection_pool* m_sqlConnPool;   // 数据库
 
     // 线程池相关
     pthread_t*           m_threads;       // 描述线程池的数组，其大小为m_thread_number
