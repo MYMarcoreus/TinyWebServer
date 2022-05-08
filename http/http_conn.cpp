@@ -255,16 +255,33 @@ http_conn::LINE_STATUS http_conn::parse_line()
 
 
 // 解析http请求行，获得请求方法，目标url及http版本号（它们使用空格或tab分隔开的）
-// strpbrk
-// strcasecmp
-// strspn
-// strchr
-// strlen
-// strcat
-// 请求行格式：【请求方法 目标资源地址 http版本号】
-// 其中空格可能为' '或'\t'，也有可能有多个空格
+
+// strpbrk(str1, str2)：查找str1第一次在str2中出现的位置
+// strcasecmp(a, b)：比较字符串a和b，忽略大小写
+// strspn(str, char_list)：若strspn返回n，则代表字符串str开头连续有n个字符都是属于字符串char_list内的字符
+/* 其伪代码如下
+    cnt = 0;
+    for c in str1:
+        if c in char_list:
+            cnt++
+        else
+            break
+
+    return cnt
+*/
+// strcspn(): 若strspn返回n，则代表字符串str开头连续有n个字符都是不属于字符串char_list内的字符
+// strchr(str, c)：返回字符c在str第一次出现的位置
+// strrchr(str, c)：返回字符c在str最后一次出现的位置
+// strlen(str)：返回字符串str的长度（包含结尾的'\0'）
+// strcat(a, b)：a += b (从a原来结尾的'\0'开始拼接，所以必会覆盖，然后在拼接完之后再添上一个'\0')
+// strncat(a, b, n)：a += b[: ( n>len(b)?len(b):n ) ]  (b无需以'\0'结尾)
+/* 请求行格式：【请求方法 目标资源地址 http版本号】
+    【GET  /  HTTP/1.1】
+    【POST /1 HTTP/1.1】
+其中的空格可能为' '或'\t'，也有可能有多个空格 */
 http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 {
+    cout << text << endl;
     // 得到被请求的资源地址
     m_url = strpbrk(text, " \t");
     if (!m_url) {
@@ -355,6 +372,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
     }
     else
     {
+        // 目前用不到的头部信息
         LOG_INFO("oop!unknow header: %s", text);
     }
     return NO_REQUEST;
@@ -373,12 +391,14 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     return NO_REQUEST;
 }
 
-// 主状态机
+//! 主状态机
 http_conn::HTTP_CODE http_conn::process_read()
 {
     LINE_STATUS line_status = LINE_OK;  // 记录当前行的读取状态
     HTTP_CODE ret = NO_REQUEST;         // 记录HTTP请求的处理结果
     char *text = 0;
+
+    LOG_INFO("recieve a header\n%s", m_read_buf);
 
     while ((m_check_state == CHECK_STATE_CONTENT && line_status == LINE_OK) || ((line_status = parse_line()) == LINE_OK))
     {
@@ -420,23 +440,28 @@ http_conn::HTTP_CODE http_conn::process_read()
     return NO_REQUEST;
 }
 
+// strrchr(str, c)：在字符串str中查找字符c最后出现的位置
+// strcat(a, b)：a += b
 http_conn::HTTP_CODE http_conn::do_request()
 {
+    cout << "doc_root = " << doc_root << endl;
+    cout << "m_url = " << m_url << endl;
+
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
     //printf("m_url:%s\n", m_url);
-    const char *p = strrchr(m_url, '/');
+    const char *p = strrchr(m_url, '/'); // 目的：截出被访问的文件名(/filename)
 
     //处理cgi
     if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
     {
-
         //根据标志判断是登录检测还是注册检测
         char flag = m_url[1];
 
         char *m_url_real = (char *)malloc(sizeof(char) * 200);
         strcpy(m_url_real, "/");
         strcat(m_url_real, m_url + 2);
+        cout << "m_url_real = " << m_url_real << endl;
         strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len - 1);
         free(m_url_real);
 
@@ -712,10 +737,12 @@ bool http_conn::process_write(HTTP_CODE ret)
             if (!add_content(ok_string))
                 return false;
         }
+        break;
     }
     default:
         return false;
     }
+
     m_iv[0].iov_base = m_write_buf;
     m_iv[0].iov_len = m_write_idx;
     m_iv_count = 1;
